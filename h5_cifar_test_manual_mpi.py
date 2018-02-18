@@ -39,35 +39,30 @@ def average_gradients(model):
         # print(node_id, source, dest)
         param.grad.data = torch.Tensor(dest) / num_pes
 
+def read_data(dset_name):
+    file_name = "cifar.hdf5"
+    f = h5py.File(file_name, "r")
+    total = len(f[dset_name + "_data"])
+    start = dist_get_start(total)
+    end = dist_get_end(total)
+    # print(total, start, end)
+    data = f[dset_name + "_data"][start:end]
+    # convert from [0,255] to [0.0,1.0]
+    data = (data) / np.float32(255.0)
+    data = (data - np.float32(0.5)) / np.float32(0.5)
+    # convert to CHW
+    # data = data.transpose((0, 2, 3, 1))
+    labels = f[dset_name + "_labels"][start:end]
+    f.close()
+    return data, labels
+
 class H5_dataset(torch.utils.data.Dataset):
     def __init__(self, train=True):
         self.train = train
-        file_name = "cifar.hdf5"
-        f = h5py.File(file_name, "r")
         if train:
-            total = len(f["train_data"])
-            start = dist_get_start(total)
-            end = dist_get_end(total)
-            # print(total, start, end)
-            self.train_data = f["train_data"][start:end]
-            # convert from [0,255] to [0.0,1.0]
-            self.train_data = (self.train_data) / np.float32(255.0)
-            self.train_data = (self.train_data - np.float32(0.5)) / np.float32(0.5)
-            # convert to CHW
-            # self.train_data = self.train_data.transpose((0, 2, 3, 1))
-            self.train_labels = f["train_labels"][start:end]
+            self.train_data, self.train_labels = read_data("train")
         else:
-            total = len(f["test_data"])
-            start = dist_get_start(total)
-            end = dist_get_end(total)
-            self.test_data = f["test_data"][start:end]
-            # convert from [0,255] to [0.0,1.0]
-            self.test_data = (self.test_data) / np.float32(255.0)
-            self.test_data = (self.test_data - np.float32(0.5)) / np.float32(0.5)
-            # convert to CHW
-            # self.test_data = self.test_data.transpose((0, 2, 3, 1))
-            self.test_labels = f["test_labels"][start:end]
-        f.close()
+            self.test_data, self.test_labels = read_data("test")
     def __getitem__(self, index):
         if self.train:
             img, target = self.train_data[index], int(self.train_labels[index])

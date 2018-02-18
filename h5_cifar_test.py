@@ -14,34 +14,32 @@ import torch.optim as optim
 from PIL import Image
 import torch.utils.data
 
+def read_data(dset_name):
+    file_name = "cifar.hdf5"
+    f = h5py.File(file_name, "r")
+    data = f[dset_name + "_data"][:]
+    # convert from [0,255] to [0.0,1.0]
+    data = (data) / np.float32(255.0)
+    data = (data - np.float32(0.5)) / np.float32(0.5)
+    # convert to CHW
+    # data = data.transpose((0, 2, 3, 1))
+    labels = f[dset_name + "_labels"][:]
+    f.close()
+    return data, labels
+
 class H5_dataset(torch.utils.data.Dataset):
     def __init__(self, train=True):
         self.train = train
-        file_name = "cifar.hdf5"
-        f = h5py.File(file_name, "r")
         if train:
-            self.train_data = f["train_data"][:]
-            # convert from [0,255] to [0.0,1.0]
-            self.train_data = (self.train_data) / np.float32(255.0)
-            self.train_data = (self.train_data - np.float32(0.5)) / np.float32(0.5)
-            # convert to CHW
-            # self.train_data = self.train_data.transpose((0, 2, 3, 1))
-            self.train_labels = f["train_labels"][:]
+            self.train_data, self.train_labels = read_data("train")
         else:
-            self.test_data = f["test_data"][:]
-            # convert from [0,255] to [0.0,1.0]
-            self.test_data = (self.test_data) / np.float32(255.0)
-            self.test_data = (self.test_data - np.float32(0.5)) / np.float32(0.5)
-            # convert to CHW
-            # self.test_data = self.test_data.transpose((0, 2, 3, 1))
-            self.test_labels = f["test_labels"][:]
-        f.close()
+            self.test_data, self.test_labels = read_data("test")
     def __getitem__(self, index):
         if self.train:
             img, target = self.train_data[index], int(self.train_labels[index])
         else:
             img, target = self.test_data[index], int(self.test_labels[index])
-        #p_img = Image.fromarray(img)
+        # p_img = Image.fromarray(img)
         return img, target
     def __len__(self):
         if self.train:
