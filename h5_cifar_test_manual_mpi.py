@@ -43,16 +43,23 @@ def read_data(dset_name):
     file_name = "cifar.hdf5"
     f = h5py.File(file_name, "r")
     total = len(f[dset_name + "_data"])
+    # shuffle data
+    if node_id == 0:
+        permute = np.random.permutation(total)
+    else:
+        permute = None  # np.empty(total, dtype=np.int64)
+    permute = comm.bcast(permute, root=0)
+    # print(permute)
     start = dist_get_start(total)
     end = dist_get_end(total)
     # print(total, start, end)
-    data = f[dset_name + "_data"][start:end]
+    data = f[dset_name + "_data"][:][permute[start:end]]
     # convert from [0,255] to [0.0,1.0]
     data = (data) / np.float32(255.0)
     data = (data - np.float32(0.5)) / np.float32(0.5)
     # convert to CHW
     # data = data.transpose((0, 2, 3, 1))
-    labels = f[dset_name + "_labels"][start:end]
+    labels = f[dset_name + "_labels"][:][permute[start:end]]
     f.close()
     return data, labels
 
