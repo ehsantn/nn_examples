@@ -15,7 +15,7 @@ from PIL import Image
 import torch.utils.data
 
 class H5_dataset(torch.utils.data.Dataset):
-    def __init__(self, train=False):
+    def __init__(self, train=True):
         self.train = train
         file_name = "cifar.hdf5"
         f = h5py.File(file_name, "r")
