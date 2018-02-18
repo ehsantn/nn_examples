@@ -19,6 +19,7 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 node_id = comm.Get_rank()
 num_pes = comm.Get_size()
+batch_size = 4 // num_pes
 
 def dist_get_start(total):
     div_chunk = int(math.ceil(total / num_pes));
@@ -80,10 +81,10 @@ class H5_dataset(torch.utils.data.Dataset):
         else:
             return len(self.test_data)
 
-trainloader = torch.utils.data.DataLoader(H5_dataset(train=True), batch_size=4//num_pes,
+trainloader = torch.utils.data.DataLoader(H5_dataset(train=True), batch_size=batch_size,
                                           shuffle=True, num_workers=2)
 
-testloader = torch.utils.data.DataLoader(H5_dataset(train=False), batch_size=4//num_pes,
+testloader = torch.utils.data.DataLoader(H5_dataset(train=False), batch_size=batch_size,
                                          shuffle=False, num_workers=2)
 
 classes = ('plane', 'car', 'bird', 'cat',
@@ -164,11 +165,11 @@ for data in testloader:
     outputs = net(Variable(images))
     _, predicted = torch.max(outputs.data, 1)
     c = (predicted == labels).squeeze()
-    for i in range(4):
+    for i in range(batch_size):
         label = labels[i]
         class_correct[label] += c[i]
         class_total[label] += 1
 
-for i in range(10):
+for i in range(len(classes)):
     print('Accuracy of %5s : %2d %%' % (
         classes[i], 100 * class_correct[i] / class_total[i]))
