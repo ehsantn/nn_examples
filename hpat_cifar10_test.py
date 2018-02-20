@@ -16,6 +16,7 @@ import torch.utils.data
 import math
 from mpi4py import MPI
 import hpat
+import time
 
 comm = MPI.COMM_WORLD
 node_id = comm.Get_rank()
@@ -30,7 +31,8 @@ def average_gradients(model):
         # print(node_id, source, dest)
         param.grad.data = torch.Tensor(dest) / num_pes
 
-@hpat.jit(locals={'data': hpat.uint8[:,:,:,:], 'labels': hpat.uint8[:,:,:,:]})
+@hpat.jit(locals={'data': hpat.uint8[:,:,:,:], 'labels': hpat.uint8[:],
+                 'data:return': 'distributed', 'labels:return': 'distributed'})
 def read_data(dset_name):
     file_name = "cifar.hdf5"
     f = h5py.File(file_name, "r")
@@ -98,10 +100,11 @@ net = Net()
 
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
-
+print("Starting Training")
 
 for epoch in range(2):  # loop over the dataset multiple times
     running_loss = 0.0
+    before_time = time.time()
     for i, data in enumerate(trainloader, 0):
         # get the inputs
         inputs, labels = data
@@ -122,9 +125,11 @@ for epoch in range(2):  # loop over the dataset multiple times
         # print statistics
         running_loss += loss.data[0]
         if i % 2000 == 1999:    # print every 2000 mini-batches
-            print('[%d, %5d] loss: %.3f' %
-                  (epoch + 1, i + 1, running_loss / 2000))
+            print('[%d, %5d] loss: %.3f  time: %.3f' %
+                  (epoch + 1, i + 1, running_loss / 2000,
+                   time.time() - before_time))
             running_loss = 0.0
+            before_time = time.time()
 
 print('Finished Training')
 
