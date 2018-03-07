@@ -16,6 +16,10 @@ import torch.utils.data
 import math
 from mpi4py import MPI
 
+seed = 0
+np.random.seed(seed)
+torch.manual_seed(seed)
+
 comm = MPI.COMM_WORLD
 node_id = comm.Get_rank()
 num_pes = comm.Get_size()
