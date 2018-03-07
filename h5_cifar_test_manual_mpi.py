@@ -16,6 +16,10 @@ import torch.utils.data
 import math
 from mpi4py import MPI
 
+seed = 0
+np.random.seed(seed)
+torch.manual_seed(seed)
+
 comm = MPI.COMM_WORLD
 node_id = comm.Get_rank()
 num_pes = comm.Get_size()
@@ -39,37 +43,54 @@ def average_gradients(model):
         # print(node_id, source, dest)
         param.grad.data = torch.Tensor(dest) / num_pes
 
-def read_data(dset_name):
+def read_train_data():
     file_name = "cifar.hdf5"
     f = h5py.File(file_name, "r")
-    total = len(f[dset_name + "_data"])
+    data, labels = f["train_data"][:], f["train_labels"][:]
+    f.close()
+
+    total = len(data)
     # shuffle data
     if node_id == 0:
         permute = np.random.permutation(total)
     else:
         permute = None  # np.empty(total, dtype=np.int64)
     permute = comm.bcast(permute, root=0)
-    # print(permute)
-    start = dist_get_start(total)
-    end = dist_get_end(total)
-    # print(total, start, end)
-    data = f[dset_name + "_data"][:][permute[start:end]]
+
+    start, end = dist_get_start(total), dist_get_end(total)
+
+    data = data[permute[start:end]]
+    labels = labels[permute[start:end]]
+
     # convert from [0,255] to [0.0,1.0]
     data = (data) / np.float32(255.0)
     data = (data - np.float32(0.5)) / np.float32(0.5)
     # convert to CHW
     # data = data.transpose((0, 2, 3, 1))
-    labels = f[dset_name + "_labels"][:][permute[start:end]]
+
+    return data, labels
+
+def read_test_data():
+    file_name = "cifar.hdf5"
+    f = h5py.File(file_name, "r")
+    data, labels = f["test_data"][:], f["test_labels"][:]
     f.close()
+
+    # convert from [0,255] to [0.0,1.0]
+    data = (data) / np.float32(255.0)
+    data = (data - np.float32(0.5)) / np.float32(0.5)
+    # convert to CHW
+    # data = data.transpose((0, 2, 3, 1))
+
     return data, labels
 
 class H5_dataset(torch.utils.data.Dataset):
     def __init__(self, train=True):
         self.train = train
         if train:
-            self.train_data, self.train_labels = read_data("train")
+            self.train_data, self.train_labels = read_train_data()
         else:
-            self.test_data, self.test_labels = read_data("test")
+            self.test_data, self.test_labels = read_test_data()
     def __getitem__(self, index):
         if self.train:
             img, target = self.train_data[index], int(self.train_labels[index])
@@ -138,40 +159,45 @@ for epoch in range(2):  # loop over the dataset multiple times
         average_gradients(net)
         optimizer.step()
 
-        # print statistics
+        # print statistics -- ideally we should average loss across workers, but
+        # this is good enough.
         running_loss += loss.data[0]
-        if i % 2000 == 1999:    # print every 2000 mini-batches
-            print('[%d, %5d] loss: %.3f' %
-                  (epoch + 1, i + 1, running_loss / 2000))
-            running_loss = 0.0
+        if node_id == 0:
+            if i % 2000 == 1999:    # print every 2000 mini-batches
+                print('[%d, %5d] loss: %.3f' %
+                      (epoch + 1, i + 1, running_loss / 2000))
+                running_loss = 0.0
 
-print('Finished Training')
+# At this point, all of the workers have the same model parameter values,
+# therefore, we evaluate the model only on one of the workers.
+if node_id == 0:
+    print('Finished Training')
 
-correct = 0
-total = 0
-for data in testloader:
-    images, labels = data
-    outputs = net(Variable(images))
-    _, predicted = torch.max(outputs.data, 1)
-    total += labels.size(0)
-    correct += (predicted == labels).sum()
+    correct = 0
+    total = 0
+    for data in testloader:
+        images, labels = data
+        outputs = net(Variable(images))
+        _, predicted = torch.max(outputs.data, 1)
+        total += labels.size(0)
+        correct += (predicted == labels).sum()
 
-print('Accuracy of the network on the 10000 test images: %d %%' % (
-    100 * correct / total))
+    print('Accuracy of the network on the 10000 test images: %d %%' % (
+        100 * correct / total))
 
 
-class_correct = list(0. for i in range(10))
-class_total = list(0. for i in range(10))
-for data in testloader:
-    images, labels = data
-    outputs = net(Variable(images))
-    _, predicted = torch.max(outputs.data, 1)
-    c = (predicted == labels).squeeze()
-    for i in range(batch_size):
-        label = labels[i]
-        class_correct[label] += c[i]
-        class_total[label] += 1
+    class_correct = list(0. for i in range(10))
+    class_total = list(0. for i in range(10))
+    for data in testloader:
+        images, labels = data
+        outputs = net(Variable(images))
+        _, predicted = torch.max(outputs.data, 1)
+        c = (predicted == labels).squeeze()
+        for i in range(batch_size):
+            label = labels[i]
+            class_correct[label] += c[i]
+            class_total[label] += 1
 
-for i in range(len(classes)):
-    print('Accuracy of %5s : %2d %%' % (
-        classes[i], 100 * class_correct[i] / class_total[i]))
+    for i in range(len(classes)):
+        print('Accuracy of %5s : %2d %%' % (
+            classes[i], 100 * class_correct[i] / class_total[i]))
