@@ -6,39 +6,52 @@ from torch.autograd import Variable
 import time
 import pandas as pd
 import hpat
+from hpat import prange
 hpat.multithread_mode = True
+cv2.setNumThreads(0)  # we use threading across images
 
 model = torchvision.models.resnet18(True)
 
-@hpat.jit(locals={'images:return': 'distributed'})
+@hpat.jit(locals={'fdata:return': 'distributed'})
 def read_data():
     #fname = "/export/intel/lustre/etotoni/BXP5401-front-camera_2017.dat"
     fname = "img2.dat"
     blob = np.fromfile(fname, np.uint8)
+
+    # reshape to images
     n_channels = 3
     height = 800
     width = 1280
     n_images = len(blob)//(n_channels*height*width)
-    data = blob.reshape(n_images, height, width, n_channels)[::100,:,:,:]
+    data = blob.reshape(n_images, height, width, n_channels)
+
+    # select every 100 image
+    data = data[::100,:,:,:]
+    n_images = len(data)
+
+    # crop to 600 by 600
+    data = data[:,100:-100, 340:-340,:]
+
+    # resize
+    resize_len = 224
+    resized_images = np.empty((n_images, resize_len, resize_len, n_channels), np.uint8)
+    for i in prange(n_images):
+        resized_images[i] = cv2.resize(data[i], (resize_len, resize_len))
+
     # convert from [0,255] to [0.0,1.0]
-    fdata = (data) / np.float32(255.0)
+    fdata = (resized_images) / np.float32(255.0)
     fdata = (fdata - np.float32(0.5)) / np.float32(0.5)
+
     # convert to CHW
-    # data = data.transpose((0, 2, 3, 1))
+    fdata = fdata.transpose((0, 3, 1, 2))
     return fdata
 
-images = read_data()
-print(images.sum())
-n_images = len(images)
-n_channels = 3
-resize_len = 224
-# resize
-resized_images = np.empty((n_images, resize_len, resize_len, n_channels), np.float32)
-for i in range(n_images):
-    resized_images[i] = cv2.resize(images[i], (resize_len, resize_len))
 
-# convert to CHW Tensor
-imgs_tensor = torch.Tensor(resized_images.transpose((0,3,1,2)))
+images = read_data()
+#hpat.distribution_report()
+
+# convert to Tensor
+imgs_tensor = torch.Tensor(images)
 
 t1 = time.time()
 res = model(Variable(imgs_tensor))
@@ -56,3 +69,4 @@ def get_stats(vals, inds):
     print(s2)
 
 get_stats(vals.data.numpy(), inds.data.numpy())
+#hpat.distribution_report()
