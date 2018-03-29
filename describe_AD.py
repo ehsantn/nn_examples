@@ -25,8 +25,8 @@ def read_data():
     n_images = len(blob)//(n_channels*height*width)
     data = blob.reshape(n_images, height, width, n_channels)
 
-    # select every 100 image
-    data = data[::100,:,:,:]
+    # select every 5 image
+    data = data[::5,:,:,:]
     n_images = len(data)
 
     # crop to 600 by 600
