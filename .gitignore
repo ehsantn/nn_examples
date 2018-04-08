@@ -1,0 +1,6 @@
+*.png
+*.jpg
+*.h5
+*.hdf5
+*.dat
+data/
