@@ -46,7 +46,7 @@ dataiter = iter(trainloader)
 images, labels = dataiter.next()
 
 # show images
-imshow(torchvision.utils.make_grid(images))
+#imshow(torchvision.utils.make_grid(images))
 # print labels
 print(' '.join('%5s' % classes[labels[j]] for j in range(4)))
 
@@ -137,7 +137,7 @@ dataiter = iter(testloader)
 images, labels = dataiter.next()
 
 # print images
-imshow(torchvision.utils.make_grid(images))
+#imshow(torchvision.utils.make_grid(images))
 print('GroundTruth: ', ' '.join('%5s' % classes[labels[j]] for j in range(4)))
 
 ########################################################################
