@@ -1,28 +1,17 @@
 import numpy as np
-#from matplotlib import pyplot as plt
-#import cv2
 import time
 import pandas as pd
 import hpat
+import hpat.distributed_lower
 from hpat import prange
 hpat.multithread_mode = True
-#cv2.setNumThreads(0)  # we use threading across images
-import tensorflow as tf
-
-from object_detection.utils import ops as utils_ops
-from object_detection.utils import label_map_util
-
-from object_detection.utils import visualization_utils as vis_util
-
-
-if tf.__version__ < '1.4.0':
-  raise ImportError('Please upgrade your tensorflow installation to v1.4.* or later!')
 
 
 @hpat.jit(locals={'data:return': 'distributed'})
 def read_data():
     #fname = "/export/intel/lustre/etotoni/BXP5401-front-camera_2017.dat"
-    fname = "img2.dat"
+    fname = "/export/intel/users/etotoni/BXP5401-front-camera_2017.dat"
+    #fname = "img2.dat"
     blob = np.fromfile(fname, np.uint8)
 
     # reshape to images
@@ -32,35 +21,31 @@ def read_data():
     n_images = len(blob)//(n_channels*height*width)
     data = blob.reshape(n_images, height, width, n_channels)
 
-    # select every 5 image
-    #data = data[::5,:,:,:]
-    n_images = len(data)
+    # select every 500 image
+    data = data[::500,:,:,:]
 
     # crop to 600 by 600
     data = data[:,100:-100, 340:-340,:]
-
-    # resize
-    # resize_len = 224
-    # resized_images = np.empty((n_images, resize_len, resize_len, n_channels), np.uint8)
-    # for i in prange(n_images):
-    #     resized_images[i] = cv2.resize(data[i], (resize_len, resize_len))
-
-    # convert from [0,255] to [0.0,1.0]
-    # fdata = (resized_images) / np.float32(255.0)
-    # fdata = (fdata - np.float32(0.5)) / np.float32(0.5)
-    #
-    # # convert to CHW
-    # fdata = fdata.transpose((0, 3, 1, 2))
     return data
 
-
+t1 = time.time()
 AD_images = read_data()
+print("read and preprocessing time:", time.time()-t1)
+
+import tensorflow as tf
+if tf.__version__ < '1.4.0':
+  raise ImportError('v1.4.* or later needed')
+from object_detection.utils import ops as utils_ops
+from object_detection.utils import label_map_util
+from object_detection.utils import visualization_utils as vis_util
 
 
-ROOT_PATH = '/home/etotoni/pse-hpc/python/hpat/nn_examples/mask_rcnn_inception_v2_coco_2018_01_28'
+#ROOT_PATH = '/home/etotoni/pse-hpc/python/hpat/nn_examples/mask_rcnn_inception_v2_coco_2018_01_28'
+ROOT_PATH = '/homes/etotoni/dev/mask_rcnn_inception_v2_coco_2018_01_28'
 PATH_TO_CKPT = ROOT_PATH + '/frozen_inference_graph.pb'
 
-PATH_TO_LABELS = '/home/etotoni/pse-hpc/python/hpat/nn_examples/models/research/object_detection/data/mscoco_label_map.pbtxt'
+#PATH_TO_LABELS = '/home/etotoni/pse-hpc/python/hpat/nn_examples/models/research/object_detection/data/mscoco_label_map.pbtxt'
+PATH_TO_LABELS = '/homes/etotoni/python/models/research/object_detection/data/mscoco_label_map.pbtxt'
 
 NUM_CLASSES = 90
 
@@ -119,46 +104,61 @@ def run_inference(images, graph):
   return output_dict
 
 
-
+t1 = time.time()
 output_dict = run_inference(AD_images, detection_graph)
+print("inference time", time.time()-t1)
+hpat.distributed_lower.fix_i_malloc()
 
+t1 = time.time()
+for i in range(len(AD_images)):
+    vis_util.visualize_boxes_and_labels_on_image_array(
+        AD_images[i],
+        output_dict['detection_boxes'][i],
+        output_dict['detection_classes'][i],
+        output_dict['detection_scores'][i],
+        category_index,
+        instance_masks=output_dict['detection_masks'+str(i)],
+        use_normalized_coordinates=True,
+        line_thickness=8)
+
+print("visualize time", time.time()-t1)
 CAR_CLASS = 3  # TODO: get from data
+BIKE_CLASS = 2
 
-@hpat.jit(locals={'num_detections:input': 'distributed',
+@hpat.jit(locals={'imgs:input': 'distributed',
+          'num_detections:input': 'distributed',
           'detection_classes:input': 'distributed',
           'detection_scores:input': 'distributed'})
-def get_stats(num_detections, detection_classes, detection_scores):
+def get_stats(imgs, num_detections, detection_classes, detection_scores):
     n_imgs = len(num_detections)
+    car_mask = np.empty(n_imgs, np.bool_)
 
     top_detect_scores = detection_scores[:,0]
     num_cars = np.empty(n_imgs, np.int32)
+    num_bikes = np.empty(n_imgs, np.int32)
     for i in prange(n_imgs):
+        car_mask[i] = False
         num_cars[i] = 0
+        num_bikes[i] = 0
         classes = detection_classes[i,:]
         for j in range(len(classes)):
             if classes[j] == CAR_CLASS:
                 num_cars[i] += 1
+                car_mask[i] = True
+            if classes[j] == BIKE_CLASS:
+                num_bikes[i] += 1
 
     df = pd.DataFrame({'top_detect_scores': top_detect_scores,
-                       'num_detections': num_detections, 'num_cars': num_cars})
+                       'num_detections': num_detections,
+                       'num_cars': num_cars,
+                       'num_bikes': num_bikes})
     stats = df.describe()
     print(stats)
+    car_imgs = imgs[car_mask]
+    car_imgs.tofile("/export/intel/users/etotoni/cars.dat")
 
-get_stats(output_dict['num_detections'], output_dict['detection_classes'],
+t1 = time.time()
+get_stats(AD_images, output_dict['num_detections'], output_dict['detection_classes'],
           output_dict['detection_scores'])
-#hpat.distribution_report()
+print("stat time", time.time()-t1)
 
-# for i in range(len(imgs)):
-#     vis_util.visualize_boxes_and_labels_on_image_array(
-#         imgs[i],
-#         output_dict['detection_boxes'][i],
-#         output_dict['detection_classes'][i],
-#         output_dict['detection_scores'][i],
-#         category_index,
-#         instance_masks=output_dict['detection_masks'+str(i)],
-#         use_normalized_coordinates=True,
-#         line_thickness=8)
-#     #plt.figure(figsize=IMAGE_SIZE)
-#     plt.imshow(imgs[i])
-#     plt.xticks([]), plt.yticks([])
-#     plt.show()
