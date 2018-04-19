@@ -2,33 +2,20 @@ import torchvision
 import os, pickle
 import numpy as np
 
-# trainset = torchvision.datasets.CIFAR10(root='./data', download=True)
-# fname = "./data/cifar-10-batches-py/data_batch_1"
-# fo = open(fname, 'rb')
-# entry = pickle.load(fo, encoding='latin1')
-# train_data.append(entry['data'])
-# fo.close()
-# train_data.tofile("train_data.dat")
-#
-
-
-file_list = ['data_batch_1']#, 'data_batch_2', 'data_batch_3', 'data_batch_4', 'data_batch_5']
-train_data = []
-for f in file_list:
-    fname = os.path.join(base_folder, f)
+def create_dataset():
+    trainset = torchvision.datasets.CIFAR10(root='./data', download=True)
+    fname = "./data/cifar-10-batches-py/data_batch_1"
     fo = open(fname, 'rb')
     entry = pickle.load(fo, encoding='latin1')
-    train_data.append(entry['data'])
+    train_data = entry['data']
     fo.close()
+    train_data.tofile("train_data.dat")
 
-train_data = np.concatenate(train_data)
-train_data.tofile("train_data.dat")
+create_dataset()
 
 import time
 import hpat
 from hpat import prange
-from torch import Tensor
-from torch.autograd import Variable
 import cv2
 hpat.multithread_mode = True
 cv2.setNumThreads(0)  # we use threading across images
@@ -72,15 +59,17 @@ t1 = time.time()
 imgs = read_data()
 #hpat.distribution_report()
 print("data read time", time.time()-t1)
+
+from torch import Tensor
+from torch.autograd import Variable
 model = torchvision.models.resnet18(True)
 t1 = time.time()
-print(imgs.shape)
 res = model(Variable(Tensor(imgs[:100])))
-print("nn time time", time.time()-t1)
+print("dnn time", time.time()-t1)
 
 # get top class stats
 vals, inds = res.max(1)
-print(inds.data.numpy())
+
 import pandas as pd
 
 @hpat.jit(locals={'vals:input': 'distributed', 'inds:input': 'distributed'})
@@ -92,4 +81,4 @@ def get_stats(vals, inds):
     print((inds == TRUCK).sum())
 
 get_stats(vals.data.numpy(), inds.data.numpy())
-hpat.distribution_report()
+#hpat.distribution_report()
