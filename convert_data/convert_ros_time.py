@@ -8,11 +8,12 @@ dset_name = 'BXP5401-front-camera_*.bag'
 # dset_dir = './'
 # fname = 'image_test.bag'
 
-out_fname = '/export/datasets/imgs_time.dat'
+out_fname = '/export/datasets/imgs_time_sorted.dat'
 #f = open(out_fname, 'wb')
 
 
 files = glob.glob(dset_dir + dset_name)
+files.sort()
 num_img = 0
 data = []
 

@@ -7,6 +7,7 @@ dset_dir = '/export/datasets/adg/'
 dset_name = 'BXP5401-imu_2017-*.bag'
 
 files = glob.glob(dset_dir + dset_name)
+files.sort()
 num_vals = 0
 
 for fname in files:
@@ -37,10 +38,10 @@ for fname in files:
 
 out_dir = "/export/intel/users/etotoni/"
 
-X.tofile(out_dir+"accel_X.dat")
-Y.tofile(out_dir+"accel_Y.dat")
-Z.tofile(out_dir+"accel_Z.dat")
+X.tofile(out_dir+"accel_X_sorted.dat")
+Y.tofile(out_dir+"accel_Y_sorted.dat")
+Z.tofile(out_dir+"accel_Z_sorted.dat")
 
-aX.tofile(out_dir+"ang_X.dat")
-aY.tofile(out_dir+"ang_Y.dat")
-aZ.tofile(out_dir+"ang_Z.dat")
+aX.tofile(out_dir+"ang_X_sorted.dat")
+aY.tofile(out_dir+"ang_Y_sorted.dat")
+aZ.tofile(out_dir+"ang_Z_sorted.dat")

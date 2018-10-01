@@ -4,7 +4,7 @@ import h5py
 
 @hpat.jit
 def convert_data():
-    fname = "/export/intel/users/etotoni/BXP5401-front-camera_2017.dat"
+    fname = "/export/intel/users/etotoni/BXP5401-front-camera_2017_sorted.dat"
     # fname = "img2.dat"
     blob = np.fromfile(fname, np.uint8)
 
@@ -15,7 +15,7 @@ def convert_data():
     n_images = len(blob)//(n_channels*height*width)
     data = blob.reshape(n_images, height, width, n_channels)
 
-    file_name = "/export/intel/users/etotoni/BXP5401-data.hdf5"
+    file_name = "/export/intel/users/etotoni/BXP5401-data_sorted.hdf5"
     # file_name = "img2.hdf5"
     f = h5py.File(file_name, "w")
     dset1 = f.create_dataset("front_cam", (n_images, height, width, n_channels), dtype='i1')
