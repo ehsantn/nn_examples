@@ -14,36 +14,43 @@ from object_detection.utils import visualization_utils as vis_util
 
 @hpat.jit
 def accel_infer():
-    #pdir = "/export/intel/users/etotoni/"
-    pdir = 'data/'
-    #fname = "/export/intel/users/etotoni/BXP5401-data.hdf5"
-    fname = 'img2.hdf5'
+    pdir = "/export/datasets/"
+    # pdir = 'data/'
+    fname = "/export/datasets/BXP5401-data_sorted.hdf5"
+    #fname = 'img2.hdf5'
     f = h5py.File(fname, "r")
-    imgs = f["front_cam"][:].astype(np.uint8)
+    imgs = f["front_cam"][:]
     f.close()
 
-    X = np.fromfile(pdir + "accel_X.dat", np.float64)
-    Y = np.fromfile(pdir + "accel_Y.dat", np.float64)
-    Z = np.fromfile(pdir + "accel_Z.dat", np.float64)
-    T = pd.DatetimeIndex(np.fromfile(pdir + 'accel_T.dat', np.int64))
+    X = np.fromfile(pdir + "accel_X_sorted.dat", np.float64)
+    Y = np.fromfile(pdir + "accel_Y_sorted.dat", np.float64)
+    Z = np.fromfile(pdir + "accel_Z_sorted.dat", np.float64)
+    T = pd.DatetimeIndex(np.fromfile(pdir + 'accel_T_sorted.dat', np.int64))
+    df = pd.DataFrame({'X': X, 'Y': Y, 'Z': Z, 'time': T})
 
-    df = pd.DataFrame({'X': X, 'Y': Y, 'Z': Z, 'T': T})
+    T2 = pd.DatetimeIndex(np.fromfile(pdir + "imgs_time_sorted.dat", np.int64))
+    df2 = pd.DataFrame({'time': T2})
     g = 9.81
     df['accel'] = np.sqrt(df.X**2 + df.Y**2 + (df.Z-g)**2)
-    df['backward'] = (df.X+df.Y) < 0.0
-    threshold = df.accel.mean() + .5 * df.accel.std()
-    win_size = 400
-    is_brake = (df.rolling(win_size)['accel'].mean() > threshold) & df.backward
-    #df = df[(df.rolling('4s', on='T')['accel'].mean() > threshold) & df.backward]
+    #df['backward'] = (df.X+df.Y) < 0.0
+    threshold = df.accel.mean() + 4 * df.accel.std()
+    #win_size = 400
+    df['is_brake'] = (df.rolling('4s', on='time')['accel'].mean() > threshold)
+    # & df.backward
+
+    df3 = pd.merge_asof(df2, df, on='time')
+    df3.is_brake.fillna(False, inplace=True)
+    imgs = imgs[df3.is_brake.values]
     with objmode():
-        run_inference(imgs)
-    #imgs.tofile("/export/intel/users/etotoni/accel_cars_v2.dat")
-    imgs.tofile("accel_cars_v2.dat")
-    return is_brake
+       run_inference(imgs)
+    imgs.tofile("/export/intel/users/etotoni/accel_cars_v2.dat")
+    #imgs.tofile("accel_cars_v2.dat")
+    return df3.is_brake.sum()
 
 
 # detection
 def run_inference(images):
+    images = images.view('u1')
     ROOT_PATH = '/home/etotoni/pse-hpc/python/hpat/nn_examples/mask_rcnn_inception_v2_coco_2018_01_28'
     #ROOT_PATH = '/homes/etotoni/dev/mask_rcnn_inception_v2_coco_2018_01_28'
     PATH_TO_CKPT = ROOT_PATH + '/frozen_inference_graph.pb'
@@ -115,4 +122,9 @@ def run_inference(images):
     return
 
 if __name__ == '__main__':
-    accel_infer()
+    A = accel_infer()
+    print("num imgs:", A)
+    #B = hpat.jit(accel_infer)()
+    #np.testing.assert_array_almost_equal(A, B)
+    #print(np.isnan(A).sum())
+    #print(A.sum(), B.sum())
